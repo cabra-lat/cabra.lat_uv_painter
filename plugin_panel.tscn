@@ -52,7 +52,8 @@ offset_bottom = 96.0
 text = "Mesh Painter saving..."
 
 [connection signal="apply_weights" from="VBoxContainer/VertexWeightsPanel" to="." method="_on_vertex_weights_panel_apply_weights"]
-[connection signal="clear_preview" from="VBoxContainer/VertexWeightsPanel" to="." method="_on_vertex_weights_panel_clear_preview"]
+[connection signal="clear_all" from="VBoxContainer/VertexWeightsPanel" to="." method="_on_vertex_weights_panel_clear_all"]
+[connection signal="clear_bone" from="VBoxContainer/VertexWeightsPanel" to="." method="_on_vertex_weights_panel_clear_bone"]
 [connection signal="values_changed" from="VBoxContainer/VertexWeightsPanel" to="." method="_on_vertex_weights_panel_values_changed"]
 [connection signal="pressed" from="UndoButton" to="." method="_on_UndoButton_pressed"]
 [connection signal="pressed" from="RedoButton" to="." method="_on_RedoButton_pressed"]

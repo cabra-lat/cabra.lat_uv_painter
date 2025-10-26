@@ -3,8 +3,8 @@ extends PanelContainer
 
 signal values_changed(brush_color, brush_opacity, brush_size, weight_value)
 signal apply_weights()
-signal preview_weights()
-signal clear_preview()
+signal clear_bone()
+signal clear_all()
 signal bone_selected(bone_index)  # New signal for bone selection
 
 enum Modes {BRUSH, SMOOTH, ERASER}
@@ -136,11 +136,11 @@ func update_brush():
   print("VertexWeightsPanel: Emitting values_changed - Color: ", current_brush_color, " Opacity: ", brush_opacity, " Size: ", brush_size, " Weight: ", weight_value)
   emit_signal("values_changed", current_brush_color, brush_opacity, brush_size, weight_value)
 
-func _on_ApplyButton_pressed():
+func _on_apply_button_pressed():
   emit_signal("apply_weights")
 
-func _on_PreviewButton_pressed():
-  emit_signal("preview_weights")
+func _on_clear_all_button_pressed():
+  emit_signal("clear_all")
 
-func _on_ClearPreviewButton_pressed():
-  emit_signal("clear_preview")
+func _on_clear_bone_button_pressed():
+  emit_signal("clear_bone")
