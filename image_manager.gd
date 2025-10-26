@@ -32,20 +32,11 @@ static func create_mpaint_file(path :String):
         row.append([1.0, 1.0, 1.0, 1.0])  # Opaque white
       data.append(row)
   else:
-    # For layer files, create appropriate default data
+    # For vertex weights, create black data
     for y in range(data_size[1]):
       var row = []
       for x in range(data_size[0]):
-        if "roughness" in path:
-          row.append([0.5, 0.5, 0.5, 1.0])  # Gray for roughness
-        elif "metalness" in path:
-          row.append([0.0, 0.0, 0.0, 1.0])  # Black for metalness
-        elif "emission" in path:
-          row.append([0.0, 0.0, 0.0, 1.0])  # Black for emission
-        elif "vertex_weights" in path:
-          row.append([0.0, 0.0, 0.0, 1.0])  # Black for vertex weights
-        else:  # albedo
-          row.append([1.0, 1.0, 1.0, 1.0])  # White for albedo
+        row.append([0.0, 0.0, 0.0, 1.0])  # Black for vertex weights
       data.append(row)
 
   # Write the file
@@ -54,6 +45,7 @@ static func create_mpaint_file(path :String):
     file.store_var(data_size)
     file.store_var(data)
     file.close()
+    print("Created mpaint file: ", path)
   else:
     push_error("Failed to create mpaint file: " + path)
 
@@ -89,6 +81,11 @@ static func mpaint_to_texture(path :String) -> ImageTexture:
 
   var texture = ImageTexture.create_from_image(image)
   return texture
+
+static func create_default_texture(width: int, height: int, default_color: Color) -> ImageTexture:
+  var image = Image.create(width, height, false, Image.FORMAT_RGBA8)
+  image.fill(default_color)
+  return ImageTexture.create_from_image(image)
 
 static func texture_to_mpaint(image_tex :Texture2D, path :String):
   var image :Image = image_tex.get_image()

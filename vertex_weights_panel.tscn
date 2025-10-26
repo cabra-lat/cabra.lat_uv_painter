@@ -1,6 +1,6 @@
 [gd_scene load_steps=8 format=3 uid="uid://bl77cxyfks0tb"]
 
-[ext_resource type="Script" uid="uid://s4b1v57dbwtl" path="res://addons/cabra.lat_uv_painter/vertex_weights_panel.gd" id="1_ww4i8"]
+[ext_resource type="Script" uid="uid://de0c2agcbwdh0" path="res://addons/cabra.lat_uv_painter/vertex_weights_panel.gd" id="1_ww4i8"]
 [ext_resource type="Texture2D" uid="uid://dhl1hyah58245" path="res://addons/cabra.lat_uv_painter/icons/brush.svg" id="2_4vctp"]
 [ext_resource type="Texture2D" uid="uid://513m8rkua7oj" path="res://addons/cabra.lat_uv_painter/icons/brush-selected.svg" id="3_10fv7"]
 [ext_resource type="Texture2D" uid="uid://toyy7hjfndnt" path="res://addons/cabra.lat_uv_painter/icons/icon.svg" id="4_ww4i8"]
@@ -20,7 +20,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer"]
 layout_mode = 2
-text = "Albedo"
+text = "Vertex Painting"
 
 [node name="Modes" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -91,8 +91,35 @@ max_value = 0.99
 step = 0.01
 value = 0.09999999999999999
 
+[node name="BoneContainer" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/BoneContainer"]
+layout_mode = 2
+text = "Current Bone:"
+
+[node name="BoneDropdown" type="OptionButton" parent="VBoxContainer/BoneContainer"]
+layout_mode = 2
+
+[node name="ApplyButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Apply"
+
+[node name="PreviewButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Preview"
+
+[node name="ClearPreviewButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Clear Bone"
+
 [connection signal="pressed" from="VBoxContainer/Modes/BrushButton" to="." method="_on_BrushButton_pressed"]
 [connection signal="pressed" from="VBoxContainer/Modes/SmoothButton" to="." method="_on_SmoothButton_pressed"]
 [connection signal="pressed" from="VBoxContainer/Modes/EraserButton" to="." method="_on_EraserButton_pressed"]
+[connection signal="value_changed" from="VBoxContainer/WeightContainer/WeightSlider" to="." method="_on_WeightSlider_value_changed"]
 [connection signal="value_changed" from="VBoxContainer/IntensityContainer/IntensitySlider" to="." method="_on_IntensitySlider_value_changed"]
 [connection signal="value_changed" from="VBoxContainer/SizeContainer/SizeSlider" to="." method="_on_SizeSlider_value_changed"]
+[connection signal="item_selected" from="VBoxContainer/BoneContainer/BoneDropdown" to="." method="_on_BoneDropdown_item_selected"]
+[connection signal="pressed" from="VBoxContainer/ApplyButton" to="." method="_on_ApplyButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/PreviewButton" to="." method="_on_PreviewButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/ClearPreviewButton" to="." method="_on_ClearPreviewButton_pressed"]

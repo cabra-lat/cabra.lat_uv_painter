@@ -1,341 +1,385 @@
-# Paiting panel that contains all the modes and uniformeters for painting the mesh instance selected
 @tool
 extends Control
-class_name PluginPanel
+class_name VertexWeightsPluginPanel
 
 var plugin_cursor :PluginCursor
 var editor_filesystem :EditorFileSystem
-var dir_path :String
+var dir_path :String = "res://meshpainter-vertex-weights"
 
 var root :Node
 var mesh_instance :MeshInstance3D
 
-# All painting types, default is albedo
-enum TabMode {ALBEDO, ROUGHNESS, METALNESS, EMISSION, VERTEX_WEIGHTS}
-# Add to existing enum
-
-# Add vertex weights textures
-var tex_vertex_weights_brush :ImageTexture
-var tex_vertex_weights_color :ImageTexture
-
-# Add vertex weights panel reference
-var vertex_weights_panel
-
-var tab_mode = TabMode.ALBEDO
-
-# Temporary nodes needed to paint on mesh
+# Temporary nodes
 var temp_plugin_node :Node
 var temp_collision :CollisionShape3D
 var temp_body :StaticBody3D
 
-# All the textures containing brush and color info, which will be passed on to PBR shader
-var tex_albedo_brush :ImageTexture
-var tex_albedo_color :ImageTexture
-var tex_albedo_layer_0 :ImageTexture
-var tex_albedo_layer_1 :ImageTexture
-var tex_albedo_layer_2 :ImageTexture
-var tex_albedo_layer_3 :ImageTexture
+# Shader material for visualization
+var vertex_weights_material :ShaderMaterial
+var vertex_weights_shader :Shader = preload("res://addons/cabra.lat_uv_painter/materials/vertex_weights_shader.gdshader")
 
-var tex_roughness_brush :ImageTexture
-var tex_roughness_color :ImageTexture
-var tex_roughness_layer_0 :ImageTexture
-var tex_roughness_layer_1 :ImageTexture
-var tex_roughness_layer_2 :ImageTexture
-var tex_roughness_layer_3 :ImageTexture
-
-var tex_metalness_brush :ImageTexture
-var tex_metalness_color :ImageTexture
-var tex_metalness_layer_0 :ImageTexture
-var tex_metalness_layer_1 :ImageTexture
-var tex_metalness_layer_2 :ImageTexture
-var tex_metalness_layer_3 :ImageTexture
-
-var tex_emission_brush :ImageTexture
-var tex_emission_color :ImageTexture
-var tex_emission_layer_0 :ImageTexture
-var tex_emission_layer_1 :ImageTexture
-var tex_emission_layer_2 :ImageTexture
-var tex_emission_layer_3 :ImageTexture
-
-# PBR shader which will receive all textures
-var pbr_shader :Shader = preload("res://addons/cabra.lat_uv_painter/materials/pbr_shader.gdshader")
+# Store original material to restore later
+var original_material :Material
 
 var mesh_id :String
+var is_setup_complete = false
 
-# Add collision to current mesh to retreive brush positions on mesh later on
+func ensure_mesh_has_skin():
+    if not mesh_instance:
+        return false
+    if mesh_instance.skin:
+        return true
+
+    var skeleton = find_skeleton_parent(mesh_instance)
+    if not skeleton:
+        push_error("No skeleton found for mesh - cannot create skin")
+        return false
+
+    var skin = Skin.new()
+    for bone_idx in skeleton.get_bone_count():
+        var bone_pose = skeleton.get_bone_rest(bone_idx)
+        skin.add_bind(bone_idx, bone_pose)
+
+    mesh_instance.skin = skin
+
+    # 🔥 CRITICAL: Assign the skeleton path
+    var skeleton_path = mesh_instance.get_path_to(skeleton)
+    mesh_instance.set_skeleton_path(skeleton_path)
+
+    print("Created basic skin and assigned skeleton path")
+    return true
+
+func find_skeleton_parent(node: Node) -> Skeleton3D:
+  var current = node
+  while current:
+    if current is Skeleton3D:
+      return current
+    current = current.get_parent()
+  return null
+
+func show_panel(root :Node, mesh_instance :MeshInstance3D):
+  print("VertexWeightsPluginPanel: show_panel called")
+
+  if not mesh_instance or not mesh_instance.mesh:
+    push_error("No valid mesh instance selected")
+    return
+
+  show()
+  self.root = root
+  self.mesh_instance = mesh_instance
+
+    # Ensure the mesh has a skin
+  if not ensure_mesh_has_skin():
+    push_error("Cannot proceed - mesh has no skin and cannot create one")
+    return
+
+    # Store the original material
+  original_material = mesh_instance.get_surface_override_material(0)
+  if not original_material:
+    original_material = mesh_instance.mesh.surface_get_material(0)
+
+  print("Original material: ", original_material)
+
+  generate_id(mesh_instance.name)
+  setup_part_1()
+
 func generate_collision():
-  # Generate collision shape from mesh
+  print("Generating collision...")
+
+  if not mesh_instance or not mesh_instance.mesh:
+    push_error("Cannot generate collision: No mesh instance or mesh")
+    return
+
+  # Clean up any existing collision
+  if temp_plugin_node and is_instance_valid(temp_plugin_node):
+    mesh_instance.remove_child(temp_plugin_node)
+    temp_plugin_node.queue_free()
+
   temp_collision = CollisionShape3D.new()
-  temp_collision.set_shape(mesh_instance.mesh.create_trimesh_shape())
+  var shape = mesh_instance.mesh.create_trimesh_shape()
+  if not shape:
+    push_error("Failed to create trimesh shape")
+    return
+
+  temp_collision.set_shape(shape)
   temp_collision.hide()
+
   # Add static body to use collisions
   temp_body = StaticBody3D.new()
   temp_body.add_child(temp_collision)
   temp_body.collision_layer = 32
+
   # Add main plugin node where body and collision shape will be
   temp_plugin_node = Node3D.new()
-  temp_plugin_node.name = "MeshPainter"
+  temp_plugin_node.name = "VertexWeightsPainter"
   temp_plugin_node.add_child(temp_body)
 
   mesh_instance.add_child(temp_plugin_node)
-  temp_collision.owner = root
-  temp_body.owner = root
-  temp_plugin_node.owner = root
 
-func retrieve_material(mat :ShaderMaterial):
-  var types = ["albedo", "roughness", "metalness", "emission"]
-  for type in types:
-    set("tex_" + type + "_brush", mat.get_shader_parameter("tex_" + type +"_brush"))
-    set("tex_" + type + "_color", mat.get_shader_parameter("tex_" + type +"_color"))
-    set("tex_" + type + "_layer_0", mat.get_shader_parameter("tex_" + type +"_layer_0"))
-    set("tex_" + type + "_layer_1", mat.get_shader_parameter("tex_" + type +"_layer_1"))
-    set("tex_" + type + "_layer_2", mat.get_shader_parameter("tex_" + type +"_layer_2"))
-    set("tex_" + type + "_layer_3", mat.get_shader_parameter("tex_" + type +"_layer_3"))
+  if root:
+    temp_collision.owner = root
+    temp_body.owner = root
+    temp_plugin_node.owner = root
+
+  print("Collision generation complete")
 
 func generate_id(name :String):
   randomize()
-  name = get_tree().edited_scene_root.scene_file_path + name
+  var scene_path = get_tree().edited_scene_root.scene_file_path if get_tree().edited_scene_root else "default"
+  name = scene_path + name
   mesh_id = str(name.hash())
-
-# Show panel, generate collisions for painting, setup PBR material and start with albedo mode
-func show_panel(root :Node, mesh_instance :MeshInstance3D):
-  show()
-  self.root = root
-  self.mesh_instance = mesh_instance
-  generate_id(mesh_instance.name)
-  setup_part_1()
+  print("Generated mesh ID: ", mesh_id)
 
 func setup_part_1():
+  print("Setup part 1")
+
   var dir = DirAccess.open("res://")
+  if not dir:
+    push_error("Cannot access res:// directory")
+    return
+
   if not dir.dir_exists(dir_path):
-    OS.alert("A folder at " + str(dir_path) + " will be created to keep all generated textures from painting.")
-    dir.make_dir(dir_path)
+    var error = dir.make_dir(dir_path)
+    if error != OK:
+      push_error("Failed to create directory: " + dir_path)
+      return
 
-  var needs_material = true
-  if mesh_instance.mesh:
+  if mesh_instance and mesh_instance.mesh:
     generate_collision()
-    if mesh_instance.mesh.surface_get_material(0) is ShaderMaterial:
-      var material :ShaderMaterial = mesh_instance.mesh.surface_get_material(0)
-      if material.shader == pbr_shader:
-        needs_material = false
-        retrieve_material(material)
-        setup_part_2()
-  if needs_material:
-    # Create new custom material
-    var mat = ShaderMaterial.new()
-    mat.shader = pbr_shader
 
-    # Get folder which will hold that meshinstance textures
-    var folder :String = dir_path + "/" + mesh_id
-    dir.make_dir(folder)
-    folder += "/"
-    create_material_part_1_4(mat, folder)
+  # Create shader material for visualization
+  vertex_weights_material = ShaderMaterial.new()
+  vertex_weights_material.shader = vertex_weights_shader
+
+  setup_part_2()
 
 func setup_part_2():
-  setup_tabs()
-  _on_TabContainer_tab_selected(0)
+    print("Setup part 2")
 
-# Create files
-func create_material_part_1_4(mat :ShaderMaterial, folder :String):
-  # Use a flag to prevent recursive imports
-  if not await create_mpaint_files_safe(folder):
-    return
-  call_deferred("create_material_part_2_4", mat, folder)
+    # Setup vertex weights panel
+    if has_node("VBoxContainer/VertexWeightsPanel"):
+        var vertex_weights_panel = $VBoxContainer/VertexWeightsPanel
 
-func create_mpaint_files_safe(folder :String) -> bool:
-  var dir = DirAccess.open("res://")
-  if not dir:
-    return false
+        # Get bone names from skeleton
+        var bone_names = get_bone_names_from_skeleton()
+        vertex_weights_panel.setup_bones(bone_names, plugin_cursor.current_bone_index)
 
-  # Check if files already exist to avoid recreating them
-  var files_exist = true
-  for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-    var layers = ["brush", "color", "layer_0", "layer_1", "layer_2", "layer_3"]
-    for i in range(layers.size()):
-      var path = folder + type + "_" + layers[i] + ".mpaint"
-      if not dir.file_exists(path):
-        files_exist = false
-        break
-    if not files_exist:
-      break
+        # Connect bone selection signal
+        vertex_weights_panel.bone_selected.connect(_on_bone_selected)
 
-  # Only create files if they don't exist
-  if not files_exist:
-    for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-      var layers = ["brush", "color", "layer_0", "layer_1", "layer_2", "layer_3"]
-      for i in range(layers.size()):
-        var path = folder + type + "_" + layers[i] + ".mpaint"
-        ImageManager.create_mpaint_file(path)
+        if vertex_weights_panel.has_method("setup"):
+            vertex_weights_panel.setup()
+            is_setup_complete = true
+        else:
+            push_error("VertexWeightsPanel doesn't have setup method")
+    else:
+        push_error("VertexWeightsPanel node not found")
 
-    # Wait for files to be created before scanning
-    await get_tree().create_timer(0.5).timeout
+    # Apply the shader material
+    if mesh_instance:
+        mesh_instance.set_surface_override_material(0, vertex_weights_material)
+        print("Applied vertex weights material")
 
-  return true
+    # Show cursor
+    if mesh_instance and temp_plugin_node and plugin_cursor:
+        plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node)
 
-func create_material_part_2_4(mat :ShaderMaterial, folder :String):
-  # Scan for new files but with a safety check
-  editor_filesystem.scan()
+        # Connect weight texture to shader
+        update_shader_for_current_bone()
 
-  # Wait for scan to complete and check if files are ready
-  var max_attempts = 10
-  var attempt = 0
+        print("Cursor shown")
+    else:
+        push_error("Cannot show cursor: missing required components")
 
-  while attempt < max_attempts:
-    if scan_new_files(folder):
-      break
-    await get_tree().create_timer(0.5).timeout
-    attempt += 1
+func get_bone_names_from_skeleton() -> Array:
+    var bone_names = []
+    var skeleton = find_skeleton_parent(mesh_instance)
 
-  if attempt >= max_attempts:
-    push_error("Failed to import mpaint files after " + str(max_attempts) + " attempts")
-    return
+    if skeleton and skeleton is Skeleton3D:
+        for i in range(skeleton.get_bone_count()):
+            bone_names.append(skeleton.get_bone_name(i))
+        print("Found ", bone_names.size(), " bones in skeleton")
+    else:
+        bone_names = ["Bone_0"]  # Default if no skeleton found
+        print("No skeleton found, using default bone")
 
-  call_deferred("create_material_part_3_4", mat, folder)
+    return bone_names
 
-func scan_new_files(folder :String) -> bool:
-  var dir = DirAccess.open("res://")
-  if not dir:
-    return false
+func _on_bone_selected(bone_index: int):
+    if plugin_cursor:
+        plugin_cursor.set_current_bone(bone_index)
+        update_shader_for_current_bone()
+        print("Switched to bone: ", bone_index)
 
-  var all_files_are_ready = true
-  for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-    for layer in ["brush", "color", "layer_0", "layer_1", "layer_2", "layer_3"]:
-      var import_file = folder + type + "_" + layer + ".mpaint.import"
-      if not dir.file_exists(import_file):
-        all_files_are_ready = false
-        break
-    if not all_files_are_ready:
-      break
+func update_shader_for_current_bone():
+    if plugin_cursor and vertex_weights_material:
+        var weight_texture = plugin_cursor.get_current_bone_texture()
+        vertex_weights_material.set_shader_parameter("weight_texture", weight_texture)
+        vertex_weights_material.set_shader_parameter("current_bone_index", plugin_cursor.current_bone_index)
+        print("Updated shader for bone: ", plugin_cursor.current_bone_index)
 
-  return all_files_are_ready
+# When changing Vertex Weights panel uniforms, pass new brush info to cursor
+func _on_vertex_weights_panel_values_changed(brush_color, brush_opacity, brush_size, weight_value) -> void:
+  if plugin_cursor:
+    plugin_cursor.set_brush_color(brush_color)
+    plugin_cursor.set_brush_opacity(brush_opacity)
+    plugin_cursor.set_brush_size(brush_size)
+    plugin_cursor.weight_value = weight_value
 
-# Create textures from files
-func create_material_part_3_4(mat :ShaderMaterial, folder :String):
-  create_textures(folder)
-  call_deferred("create_material_part_4_4", mat, folder)
+    # Update shader parameters
+    vertex_weights_material.set_shader_parameter("brush_color", brush_color)
 
-# Finished creation of material
-func create_material_part_4_4(mat :ShaderMaterial, folder :String):
-  # Set all shader uniforms
-  setup_shader_textures(mat)
-  mat.set_shader_parameter("uv_scale", Vector3(1,1,1))
+    print("Brush values updated")
 
-  # Use material for current mesh instance
-  mesh_instance.mesh.surface_set_material(0, mat)
-  call_deferred("setup_part_2")
+func _on_vertex_weights_panel_apply_weights():
+  apply_weights_to_mesh()
 
-func create_mpaint_files(folder :String):
-  for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-    var layers = ["brush", "color", "layer_0", "layer_1", "layer_2", "layer_3"]
-    for i in range(layers.size()):
-      var path = folder + type + "_" + layers[i] + ".mpaint"
-      ImageManager.create_mpaint_file(path)
-
-func create_textures(folder):
-  for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-    set("tex_" + type + "_brush", ImageManager.mpaint_to_texture(folder + type + "_brush.mpaint"))
-    set("tex_" + type + "_color", ImageManager.mpaint_to_texture(folder + type + "_color.mpaint"))
-    if type != "vertex_weights":  # Vertex weights doesn't need layers
-      set("tex_" + type + "_layer_0", ImageManager.mpaint_to_texture(folder + type + "_layer_0.mpaint"))
-      set("tex_" + type + "_layer_1", ImageManager.mpaint_to_texture(folder + type + "_layer_1.mpaint"))
-      set("tex_" + type + "_layer_2", ImageManager.mpaint_to_texture(folder + type + "_layer_2.mpaint"))
-      set("tex_" + type + "_layer_3", ImageManager.mpaint_to_texture(folder + type + "_layer_3.mpaint"))
-
-func setup_shader_textures(mat :ShaderMaterial):
-  for type in ["albedo", "roughness", "metalness", "emission", "vertex_weights"]:
-    mat.set_shader_parameter("tex_" + type + "_brush", get("tex_" + type + "_brush"))
-    mat.set_shader_parameter("tex_" + type + "_color", get("tex_" + type + "_color"))
-    if type != "vertex_weights":
-      mat.set_shader_parameter("tex_" + type + "_layer_0", get("tex_" + type + "_layer_0"))
-      mat.set_shader_parameter("tex_" + type + "_layer_1", get("tex_" + type + "_layer_1"))
-      mat.set_shader_parameter("tex_" + type + "_layer_2", get("tex_" + type + "_layer_2"))
-      mat.set_shader_parameter("tex_" + type + "_layer_3", get("tex_" + type + "_layer_3"))
-
-func setup_tabs():
-  var folder :String = dir_path + "/" + mesh_id + "/"
-  $VBoxContainer/TabContainer/E.setup(tex_emission_layer_0, tex_emission_layer_1, tex_emission_layer_2, tex_emission_layer_3, folder)
-  $VBoxContainer/TabContainer/M.setup(tex_metalness_layer_0, tex_metalness_layer_1, tex_metalness_layer_2, tex_metalness_layer_3, folder)
-  $VBoxContainer/TabContainer/G.setup(tex_roughness_layer_0, tex_roughness_layer_1, tex_roughness_layer_2, tex_roughness_layer_3, folder)
-  $VBoxContainer/TabContainer/A.setup(tex_albedo_layer_0, tex_albedo_layer_1, tex_albedo_layer_2, tex_albedo_layer_3, folder)
-  # Setup vertex weights panel
-  vertex_weights_panel = $VBoxContainer/TabContainer/V
-  vertex_weights_panel.setup()
-
-# When tab selected, pass on right textures for cursor to paint on (albedo, roughness, metalness, emission)
-func _on_TabContainer_tab_selected(tab: int) -> void:
-  tab_mode = tab
-  match tab_mode:
-    TabMode.ALBEDO:
-      plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node, tex_albedo_brush, tex_albedo_color, "albedo")
-    TabMode.ROUGHNESS:
-      plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node, tex_roughness_brush, tex_roughness_color, "roughness")
-    TabMode.METALNESS:
-      plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node, tex_metalness_brush, tex_metalness_color, "metalness")
-    TabMode.EMISSION:
-      plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node, tex_emission_brush, tex_emission_color, "emission")
-    TabMode.VERTEX_WEIGHTS:
-      plugin_cursor.show_cursor(root, mesh_instance, temp_plugin_node, tex_vertex_weights_brush, tex_vertex_weights_color, "vertex_weights")
-
-# When changing Albedo panel uniforms, pass new brush info to cursor
-func _on_Albedo_values_changed(brush_color, brush_opacity, brush_size) -> void:
-  plugin_cursor.set_brush_color(brush_color)
-  plugin_cursor.set_brush_opacity(brush_opacity)
-  plugin_cursor.set_brush_size(brush_size)
-
-# When changing Roughness panel uniforms, pass new brush info to cursor
-func _on_Roughness_values_changed(brush_color, brush_opacity, brush_size) -> void:
-  plugin_cursor.set_brush_color(brush_color)
-  plugin_cursor.set_brush_opacity(brush_opacity)
-  plugin_cursor.set_brush_size(brush_size)
-
-# When changing Metalness panel uniforms, pass new brush info to cursor
-func _on_Metalness_values_changed(brush_color, brush_opacity, brush_size) -> void:
-  plugin_cursor.set_brush_color(brush_color)
-  plugin_cursor.set_brush_opacity(brush_opacity)
-  plugin_cursor.set_brush_size(brush_size)
-
-# When changing Emission panel uniforms, pass new brush info to cursor
-func _on_Emission_values_changed(brush_color, brush_opacity, brush_size) -> void:
-  plugin_cursor.set_brush_color(brush_color)
-  plugin_cursor.set_brush_opacity(brush_opacity)
-  plugin_cursor.set_brush_size(brush_size)
-
-# When changing Vertex panel uniforms, pass new brush info to cursor
-func _on_VertexWeight_values_changed(brush_color, brush_opacity, brush_size) -> void:
-  plugin_cursor.set_brush_color(brush_color)
-  plugin_cursor.set_brush_opacity(brush_opacity)
-  plugin_cursor.set_brush_size(brush_size)
-
-# Hide panel, remove added plugin nodes from tree and hide cursor
 func hide_panel():
-  if mesh_instance:
-    $SavingPopup.popup_centered()
-    await get_tree().create_timer(1.0).timeout
-    save()
-    $SavingPopup.hide()
+  print("Hiding panel")
 
-    if temp_plugin_node:
+  if mesh_instance:
+    # Restore original material
+    mesh_instance.set_surface_override_material(0, original_material)
+    print("Restored original material")
+
+    if temp_plugin_node and is_instance_valid(temp_plugin_node):
       mesh_instance.remove_child(temp_plugin_node)
+      temp_plugin_node.queue_free()
+      print("Removed temp plugin node")
     mesh_instance = null
 
   if plugin_cursor:
     plugin_cursor.hide_cursor()
+    print("Cursor hidden")
+
+  is_setup_complete = false
   hide()
+  print("Panel hidden")
 
-func save():
-  # Save mpaint files
-  var folder :String = dir_path + "/" + mesh_id + "/"
 
-  var types = ["albedo", "roughness", "metalness", "emission", "vertex_weights" ]
-  for type in types:
-    var layers = ["brush", "color"]
-    for i in range(layers.size()):
-      var tex :ImageTexture = get("tex_" + type + "_" + layers[i])
-      var path = folder + type + "_" + layers[i] + ".mpaint"
-      ImageManager.texture_to_mpaint(tex, path)
+func apply_weights_to_mesh():
+  if not mesh_instance or not mesh_instance.mesh:
+    push_error("No mesh instance to apply weights to")
+    return
 
-func _on_UndoButton_pressed() -> void:
-  plugin_cursor.undo()
+  var mesh = mesh_instance.mesh
+  if mesh.get_surface_count() <= 0:
+    push_error("Mesh has no surfaces!")
+    return
 
-func _on_RedoButton_pressed() -> void:
-  plugin_cursor.redo()
+  var arrays = mesh.surface_get_arrays(0)
+
+  # --- SAFETY: Ensure required arrays exist ---
+  var vertex_count = 0
+  if arrays.size() > Mesh.ARRAY_VERTEX and arrays[Mesh.ARRAY_VERTEX]:
+    vertex_count = arrays[Mesh.ARRAY_VERTEX].size()
+  else:
+    push_error("Mesh has no vertices!")
+    return
+
+  # Ensure ARRAY_BONES and ARRAY_WEIGHTS exist and are correct type
+  if arrays.size() <= Mesh.ARRAY_BONES or arrays[Mesh.ARRAY_BONES] == null:
+    arrays.resize(max(arrays.size(), Mesh.ARRAY_BONES + 1))
+    arrays[Mesh.ARRAY_BONES] = PackedInt32Array()
+  if arrays.size() <= Mesh.ARRAY_WEIGHTS or arrays[Mesh.ARRAY_WEIGHTS] == null:
+    arrays.resize(max(arrays.size(), Mesh.ARRAY_WEIGHTS + 1))
+    arrays[Mesh.ARRAY_WEIGHTS] = PackedFloat32Array()
+
+  # Initialize with zeros if empty or wrong size
+  if typeof(arrays[Mesh.ARRAY_BONES]) != TYPE_PACKED_INT32_ARRAY:
+    arrays[Mesh.ARRAY_BONES] = PackedInt32Array()
+  if typeof(arrays[Mesh.ARRAY_WEIGHTS]) != TYPE_PACKED_FLOAT32_ARRAY:
+    arrays[Mesh.ARRAY_WEIGHTS] = PackedFloat32Array()
+
+  # Ensure they have 4 * vertex_count elements
+  var required_size = vertex_count * 4
+  if arrays[Mesh.ARRAY_BONES].size() != required_size:
+    arrays[Mesh.ARRAY_BONES].resize(required_size)
+    for i in range(required_size):
+      arrays[Mesh.ARRAY_BONES][i] = 0
+  if arrays[Mesh.ARRAY_WEIGHTS].size() != required_size:
+    arrays[Mesh.ARRAY_WEIGHTS].resize(required_size)
+    for i in range(required_size):
+      arrays[Mesh.ARRAY_WEIGHTS][i] = 0.0
+
+  # --- Now safe to proceed ---
+  var uvs = arrays[Mesh.ARRAY_TEX_UV]
+  if uvs.size() == 0:
+    push_error("Mesh has no UV coordinates")
+    return
+
+  var new_weights = PackedFloat32Array()
+  var new_bones = PackedInt32Array()
+
+  var bone_textures = plugin_cursor.get_all_bone_textures()
+  var bone_indices = bone_textures.keys()
+
+  for i in range(vertex_count):
+    if i < uvs.size():
+      var uv = uvs[i]
+      var tex_x = int(clamp(uv.x * plugin_cursor.texture_size, 0, plugin_cursor.texture_size - 1))
+      var tex_y = int(clamp(uv.y * plugin_cursor.texture_size, 0, plugin_cursor.texture_size - 1))
+
+      var vertex_weights = []
+      for bone_idx in bone_indices:
+        var weight_image = plugin_cursor.bone_weight_images[bone_idx]
+        var weight = weight_image.get_pixel(tex_x, tex_y).r
+        if weight > 0:
+          vertex_weights.append({"bone": bone_idx, "weight": weight})
+
+      vertex_weights.sort_custom(func(a, b): return a.weight > b.weight)
+      vertex_weights = vertex_weights.slice(0, min(4, vertex_weights.size()))
+
+      var total_weight = 0.0
+      for vw in vertex_weights:
+        total_weight += vw.weight
+      if total_weight > 0:
+        for vw in vertex_weights:
+          vw.weight /= total_weight
+
+      for j in range(4):
+        if j < vertex_weights.size():
+          new_weights.append(vertex_weights[j].weight)
+          new_bones.append(vertex_weights[j].bone)
+        else:
+          new_weights.append(0.0)
+          new_bones.append(0)
+    else:
+      for j in range(4):
+        new_weights.append(0.0)
+        new_bones.append(0)
+
+  # Assign
+  arrays[Mesh.ARRAY_WEIGHTS] = new_weights
+  arrays[Mesh.ARRAY_BONES] = new_bones
+
+  # Validate types before creating mesh
+  if typeof(arrays[Mesh.ARRAY_BONES]) != TYPE_PACKED_INT32_ARRAY:
+    push_error("ARRAY_BONES is not PackedInt32Array")
+    return
+  if typeof(arrays[Mesh.ARRAY_WEIGHTS]) != TYPE_PACKED_FLOAT32_ARRAY:
+    push_error("ARRAY_WEIGHTS is not PackedFloat32Array")
+    return
+
+  var new_mesh = ArrayMesh.new()
+  new_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+  if new_mesh.get_surface_count() == 0:
+    push_error("Failed to create new mesh surface — invalid arrays")
+    return
+
+  # Copy materials
+  var surface_count = min(mesh.get_surface_count(), new_mesh.get_surface_count())
+  for i in range(surface_count):
+    var mat = mesh.surface_get_material(i)
+    if mat:
+      new_mesh.surface_set_material(i, mat)
+
+  mesh_instance.mesh = new_mesh
+  print("Applied multi-bone weights to mesh for ", vertex_count, " vertices")
+  print("Used bones: ", bone_indices)
+
+func _on_vertex_weights_panel_clear_preview() -> void:
+  if plugin_cursor:
+    plugin_cursor.clear_current_bone_weights()
+    update_shader_for_current_bone()

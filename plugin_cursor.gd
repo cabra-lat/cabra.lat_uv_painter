@@ -1,4 +1,3 @@
-# Cursor that will paint on textures, based on mesh surface position and brush info (color, opacity, size)
 @tool
 extends Node3D
 
@@ -8,53 +7,303 @@ var root :Node
 var mesh_instance :MeshInstance3D
 var temp_plugin_node :Node3D
 
-# Painting tells if mouse is painting right now or not
 var painting = false
-
-# Buffers will contain the brush and color information
-var brush_buffer :Array
-var color_buffer :Array
-
 var brush_color :Color = Color.WHITE
 var brush_size :float = 0.1
+var weight_value :float = 1.0
 
-# Textures will contain the texture version of buffers to pass it to PBR shader
-var tex_brush :ImageTexture
-var tex_color :ImageTexture
+# Multi-bone weight storage
+var bone_weight_textures = {}  # Dictionary: bone_index -> ImageTexture
+var bone_weight_images = {}    # Dictionary: bone_index -> Image
+var current_bone_index :int = 0
+var texture_size = 1024
 
-var history_manager :HistoryManager
+func show_cursor(root :Node, mesh_instance :MeshInstance3D, temp_plugin_node :Node3D):
+    show()
+    self.root = root
+    self.mesh_instance = mesh_instance
+    self.temp_plugin_node = temp_plugin_node
 
-# Add painting type tracking
-var painting_type :String = ""
+    # Initialize weight textures from existing mesh weights
+    initialize_weight_textures_from_mesh(mesh_instance)
 
-func show_cursor(root :Node, mesh_instance :MeshInstance3D, temp_plugin_node :Node3D, tex_brush :ImageTexture, tex_color :ImageTexture, type :String = ""):
-  show()
+    # Add cursor to tree
+    var cursor_absent = true
+    for child in temp_plugin_node.get_children():
+        if child == self:
+            cursor_absent = false
+            break
 
-  self.root = root
-  self.mesh_instance = mesh_instance
-  self.temp_plugin_node = temp_plugin_node
-  self.tex_brush = tex_brush
-  self.tex_color = tex_color
-  self.painting_type = type
+    if cursor_absent:
+        temp_plugin_node.add_child(self)
+        self.owner = root
 
-  history_manager = HistoryManager.new()
+func initialize_weight_textures_from_mesh(mesh_instance: MeshInstance3D):
+    # Clear existing textures
+    bone_weight_textures.clear()
+    bone_weight_images.clear()
 
-  if painting_type != "vertex_weights":
-    textures_to_buffers()
-    history_manager.add_history(brush_buffer, color_buffer)
+    if not mesh_instance or not mesh_instance.mesh:
+        # Create default texture for bone 0
+        create_bone_weight_texture(0)
+        return
 
-  # Add cursor to tree under the temporary plugin node
-  var cursor_absent = true
-  for child in temp_plugin_node.get_children():
-    if child == self:
-      cursor_absent = false
-      break
+    var mesh = mesh_instance.mesh
+    var arrays = mesh.surface_get_arrays(0)
+    var vertices = arrays[Mesh.ARRAY_VERTEX]
+    var uvs = arrays[Mesh.ARRAY_TEX_UV]
 
-  if cursor_absent:
-    temp_plugin_node.add_child(self)
-    self.owner = root
+    if uvs.size() == 0:
+        push_error("Mesh has no UV coordinates! Cannot initialize weights.")
+        create_bone_weight_texture(0)
+        return
 
-# ... rest of existing functions ...
+    # Check if mesh has vertex weights (bone weights)
+    var bone_weights = []
+    var bone_indices = []
+
+    if arrays.size() > Mesh.ARRAY_WEIGHTS and arrays[Mesh.ARRAY_WEIGHTS] != null:
+        bone_weights = arrays[Mesh.ARRAY_WEIGHTS]
+    if arrays.size() > Mesh.ARRAY_BONES and arrays[Mesh.ARRAY_BONES] != null:
+        bone_indices = arrays[Mesh.ARRAY_BONES]
+
+    if bone_weights.size() > 0 and bone_indices.size() > 0:
+        print("Loading existing multi-bone weights from mesh...")
+
+        # Find all bones used in the mesh and their weights
+        var bone_vertex_weights = {}  # bone_index -> Array of vertex weights
+
+        for i in range(vertices.size()):
+            if i < uvs.size() and i * 4 < bone_indices.size():
+                var uv = uvs[i]
+
+                # Check all 4 possible bone influences per vertex
+                for j in range(4):
+                    var bone_idx = bone_indices[i * 4 + j]
+                    var weight = bone_weights[i * 4 + j]
+
+                    if weight > 0:
+                        if not bone_vertex_weights.has(bone_idx):
+                            bone_vertex_weights[bone_idx] = []
+
+                        bone_vertex_weights[bone_idx].append({
+                            "vertex_index": i,
+                            "uv": uv,
+                            "weight": weight
+                        })
+
+        # Create textures for each bone with weights
+        for bone_idx in bone_vertex_weights:
+            create_bone_weight_texture(bone_idx)
+            var weight_image = bone_weight_images[bone_idx]
+
+            # Set weights for this bone
+            for vertex_data in bone_vertex_weights[bone_idx]:
+                var uv = vertex_data["uv"]
+                var weight = vertex_data["weight"]
+
+                var tex_x = int(uv.x * texture_size)
+                var tex_y = int(uv.y * texture_size)
+
+                tex_x = clamp(tex_x, 0, texture_size - 1)
+                tex_y = clamp(tex_y, 0, texture_size - 1)
+
+                weight_image.set_pixel(tex_x, tex_y, Color(weight, 0, 0, 1.0))
+
+            # Update texture
+            bone_weight_textures[bone_idx].update(weight_image)
+
+        print("Loaded weights for bones: ", bone_vertex_weights.keys())
+
+        # Set current bone to first one with weights, or 0 if none
+        if bone_vertex_weights.size() > 0:
+            current_bone_index = bone_vertex_weights.keys()[0]
+        else:
+            current_bone_index = 0
+            create_bone_weight_texture(0)
+    else:
+        print("No existing vertex weights found - starting with default bone")
+        create_bone_weight_texture(0)
+
+func create_bone_weight_texture(bone_index: int):
+    var weight_image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
+    weight_image.fill(Color(0, 0, 0, 1))  # Initialize with black (0 weight)
+    bone_weight_images[bone_index] = weight_image
+
+    var weight_texture = ImageTexture.create_from_image(weight_image)
+    bone_weight_textures[bone_index] = weight_texture
+
+    print("Created weight texture for bone ", bone_index)
+
+func set_current_bone(bone_index: int):
+    current_bone_index = bone_index
+    print("PluginCursor: Set current bone to ", bone_index)
+
+    # Ensure this bone has a weight texture
+    if not bone_weight_textures.has(bone_index):
+        create_bone_weight_texture(bone_index)
+
+func get_current_bone_texture() -> ImageTexture:
+    if bone_weight_textures.has(current_bone_index):
+        return bone_weight_textures[current_bone_index]
+    else:
+        # Create texture if it doesn't exist
+        create_bone_weight_texture(current_bone_index)
+        return bone_weight_textures[current_bone_index]
+
+func get_all_bone_textures() -> Dictionary:
+    return bone_weight_textures.duplicate()
+
+func paint_vertex_weights(position: Vector3):
+    if not mesh_instance or not mesh_instance.mesh:
+        return
+
+    var mesh :Mesh = mesh_instance.mesh
+    if mesh.get_surface_count() == 0:
+        return
+
+    # Get mesh data
+    var arrays = mesh.surface_get_arrays(0)
+    var vertices :PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+    var uvs :PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+
+    if uvs.size() == 0:
+        push_error("Mesh has no UV coordinates! Cannot paint weights.")
+        return
+
+    var local_pos = mesh_instance.to_local(position)
+    var max_distance = brush_size * 2.0
+
+    # Make sure we have a texture for the current bone
+    if not bone_weight_images.has(current_bone_index):
+        create_bone_weight_texture(current_bone_index)
+
+    var weight_image = bone_weight_images[current_bone_index]
+    var vertices_painted = 0
+
+    # Find the closest point on the mesh surface for more accurate UV sampling
+    var closest_distance = INF
+    var closest_uv = Vector2.ZERO
+    var closest_vertex = -1
+
+    # First pass: find the closest vertex and its UV
+    for i in range(vertices.size()):
+        var vertex = vertices[i]
+        var distance = vertex.distance_to(local_pos)
+
+        if distance < closest_distance:
+            closest_distance = distance
+            closest_vertex = i
+            if i < uvs.size():
+                closest_uv = uvs[i]
+
+    if closest_vertex == -1:
+        return
+
+    # Second pass: paint in a radius around the closest UV point
+    var brush_radius_uv = brush_size * 0.1  # Adjust this multiplier based on your UV scale
+    var brush_center_uv = closest_uv
+
+    # Convert brush radius to texture pixels
+    var brush_radius_pixels = int(brush_radius_uv * texture_size)
+    var center_x = int(brush_center_uv.x * texture_size)
+    var center_y = int(brush_center_uv.y * texture_size)
+
+    # Paint in a circular area in UV space
+    for x in range(center_x - brush_radius_pixels, center_x + brush_radius_pixels + 1):
+        for y in range(center_y - brush_radius_pixels, center_y + brush_radius_pixels + 1):
+            if x < 0 or x >= texture_size or y < 0 or y >= texture_size:
+                continue
+
+            # Calculate distance from brush center in UV space
+            var uv_dist_x = float(x - center_x) / texture_size
+            var uv_dist_y = float(y - center_y) / texture_size
+            var uv_distance = sqrt(uv_dist_x * uv_dist_x + uv_dist_y * uv_dist_y)
+
+            if uv_distance <= brush_radius_uv:
+                # Calculate falloff based on UV distance
+                var falloff = 1.0 - (uv_distance / brush_radius_uv)
+                var influence = brush_color.a * falloff * weight_value
+
+                # Get current weight from texture
+                var current_color = weight_image.get_pixel(x, y)
+                var current_weight = current_color.r
+
+                # Apply painting based on brush mode
+                var new_weight = current_weight
+                if brush_color.r > 0.5:  # Brush mode - add weight
+                    new_weight = clamp(current_weight + influence, 0.0, 1.0)
+                elif brush_color.b > 0.5:  # Eraser mode - remove weight
+                    new_weight = clamp(current_weight - influence, 0.0, 1.0)
+
+                # Update texture
+                weight_image.set_pixel(x, y, Color(new_weight, 0, 0, 1.0))
+                vertices_painted += 1
+
+    # Update texture
+    var weight_texture = bone_weight_textures[current_bone_index]
+    weight_texture.update(weight_image)
+
+    print("Painted ", vertices_painted, " pixels for bone ", current_bone_index)
+
+# Texture-based weight storage
+var weight_texture :ImageTexture
+var weight_image :Image
+
+func initialize_weight_texture_from_mesh(mesh_instance: MeshInstance3D):
+    # Create a blank weight texture
+    weight_image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
+
+    if not mesh_instance or not mesh_instance.mesh:
+        weight_image.fill(Color(0, 0, 0, 1))
+        weight_texture = ImageTexture.create_from_image(weight_image)
+        return
+
+    var mesh = mesh_instance.mesh
+    var arrays = mesh.surface_get_arrays(0)
+    var vertices = arrays[Mesh.ARRAY_VERTEX]
+    var uvs = arrays[Mesh.ARRAY_TEX_UV]
+
+    if uvs.size() == 0:
+        push_error("Mesh has no UV coordinates! Cannot initialize weights.")
+        weight_image.fill(Color(0, 0, 0, 1))
+        weight_texture = ImageTexture.create_from_image(weight_image)
+        return
+
+    # Check if mesh has vertex weights
+    var bone_weights = []
+    if arrays.size() > Mesh.ARRAY_WEIGHTS and arrays[Mesh.ARRAY_WEIGHTS] != null:
+        bone_weights = arrays[Mesh.ARRAY_WEIGHTS]
+
+    # Fill texture with existing weights
+    weight_image.fill(Color(0, 0, 0, 1))
+
+    if bone_weights.size() > 0:
+        print("Loading existing vertex weights from mesh for ", vertices.size(), " vertices")
+
+        for i in range(vertices.size()):
+            if i < uvs.size():
+                var uv = uvs[i]
+                var tex_x = int(uv.x * texture_size)
+                var tex_y = int(uv.y * texture_size)
+
+                tex_x = clamp(tex_x, 0, texture_size - 1)
+                tex_y = clamp(tex_y, 0, texture_size - 1)
+
+                # Get the weight for this vertex (using first bone weight)
+                var weight = 0.0
+                if i * 4 < bone_weights.size():
+                    weight = bone_weights[i * 4]  # First bone weight
+
+                # Store weight in red channel
+                weight_image.set_pixel(tex_x, tex_y, Color(weight, 0, 0, 1.0))
+
+        print("Successfully loaded existing weights")
+    else:
+        print("No existing vertex weights found - starting with default weights")
+        weight_image.fill(Color(0, 0, 0, 1))
+
+    weight_texture = ImageTexture.create_from_image(weight_image)
 
 func input(camera :Camera3D, event: InputEvent) -> bool:
   var captured_event = false
@@ -72,24 +321,8 @@ func input(camera :Camera3D, event: InputEvent) -> bool:
     if hit:
       display_brush_at(hit.position, hit.normal)
       if painting:
-        if painting_type == "vertex_weights":
-          # Vertex painting logic
-          paint_vertices(hit.position, hit.normal)
-          captured_event = true
-        else:
-          # Texture painting logic
-          var local_pos = mesh_instance.to_local(hit.position)
-          var brush_info = Color(local_pos.x, local_pos.y, local_pos.z, brush_size)
-          var color_info = brush_color
-
-          if brush_size == 1.0 and brush_color.a == 1.0:
-            brush_buffer = []
-            color_buffer = []
-
-          brush_buffer.append(brush_info)
-          color_buffer.append(color_info)
-          buffers_to_textures()
-          captured_event = true
+        paint_vertex_weights(hit.position)
+        captured_event = true
     else:
       display_brush_at()
 
@@ -97,137 +330,24 @@ func input(camera :Camera3D, event: InputEvent) -> bool:
     if event.button_index == MOUSE_BUTTON_LEFT and visible:
       painting = event.pressed
       captured_event = true
-      if not painting and painting_type != "vertex_weights":
-        history_manager.add_history(brush_buffer, color_buffer)
 
   return captured_event
 
-# Simple vertex painting implementation
-func paint_vertices(position: Vector3, normal: Vector3):
-  # Basic vertex painting - you'll need to implement the full logic
-  print("Vertex painting at: ", position)
+func get_weight_texture() -> ImageTexture:
+  return weight_texture
 
-var weight_value :float = 1.0
-var painting_vertices = false
-var mesh_data :ArrayMesh
-var vertex_buffer :PackedVector3Array
-var normal_buffer :PackedVector3Array
-var weight_buffer :PackedFloat32Array
-
-func initialize_vertex_data():
-  if mesh_instance and mesh_instance.mesh:
-    mesh_data = mesh_instance.mesh
-    # Get vertex positions and normals
-    var surface_count = mesh_data.get_surface_count()
-    if surface_count > 0:
-      var arrays = mesh_data.surface_get_arrays(0)
-      vertex_buffer = arrays[Mesh.ARRAY_VERTEX]
-      normal_buffer = arrays[Mesh.ARRAY_NORMAL]
-
-      # Initialize weight buffer (all zeros)
-      weight_buffer = PackedFloat32Array()
-      weight_buffer.resize(vertex_buffer.size())
-      for i in range(weight_buffer.size()):
-        weight_buffer[i] = 0.0
-
-func update_mesh_weights():
-  if mesh_data and mesh_instance:
-    # Create a copy of the mesh to modify
-    var new_mesh = mesh_data.duplicate()
-    var surface_count = new_mesh.get_surface_count()
-
-    if surface_count > 0:
-      var arrays = new_mesh.surface_get_arrays(0)
-
-      # Update vertex colors with weights (for visualization)
-      if arrays[Mesh.ARRAY_COLOR] == null or arrays[Mesh.ARRAY_COLOR].size() != vertex_buffer.size():
-        var color_array = PackedColorArray()
-        color_array.resize(vertex_buffer.size())
-        arrays[Mesh.ARRAY_COLOR] = color_array
-
-      for i in range(arrays[Mesh.ARRAY_COLOR].size()):
-        var weight = weight_buffer[i]
-        arrays[Mesh.ARRAY_COLOR][i] = Color(weight, weight, weight, 1.0)
-
-      # Remove existing surface and add new one
-      new_mesh.surface_remove(0)
-      new_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-
-      # Update mesh instance
-      mesh_instance.mesh = new_mesh
-
-# Hide cursor and remove it from the tree
-func hide_cursor():
-  painting = false
-  if temp_plugin_node:
-    # Add cursor to tree under the temporary plugin node
-    var cursor_present = false
-    for child in temp_plugin_node.get_children():
-      if child == self:
-        cursor_present = true
-        break
-    if cursor_present:
-      temp_plugin_node.remove_child(self)
-  hide()
-
-# Set brush rgb
 func set_brush_color(color :Color):
-  brush_color.r = color.r
-  brush_color.g = color.g
-  brush_color.b = color.b
+  brush_color = color
 
-# Set brush alpha
 func set_brush_opacity(alpha: float):
   brush_color.a = alpha
 
-# Set brush size
-# Brush size param is very small, scale cursor mesh to fit new real size
 func set_brush_size(size :float):
   brush_size = size
   if size == 1.0:
     size *= 100
   $Cursor.scale = Vector3(1.0, 1.0, 1.0) * size
 
-# Take current textures and create the associated buffers (brush and color info)
-func textures_to_buffers():
-  brush_buffer = []
-  color_buffer = []
-
-  var brush_image = tex_brush.get_image()
-  var color_image = tex_color.get_image()
-
-  # Build buffers one row at a time
-  var is_done = false
-  for x in range(0, brush_image.get_width()):
-    var brush_info = brush_image.get_pixel(x, 0)
-    if brush_info.a == 0.0:
-      # Brush color alpha means we reached the end of brush info
-      is_done = true
-      break
-    else:
-      brush_buffer.append(brush_info)
-      color_buffer.append(color_image.get_pixel(x, 0))
-
-# Use buffers to update current textures
-func buffers_to_textures():
-  var brush_image = tex_brush.get_image()
-  var color_image = tex_color.get_image()
-
-  # Clear textures first
-  brush_image.fill(Color(0,0,0,0))
-  color_image.fill(Color(1,1,1,1))
-
-  var width = brush_image.get_width()
-  var height = brush_image.get_height()
-
-  for x in range(0, brush_buffer.size()):
-    brush_image.set_pixel(x, 0, brush_buffer[x])
-    color_image.set_pixel(x, 0, color_buffer[x])
-
-  tex_brush.set_image(brush_image)
-  tex_color.set_image(color_image)
-
-# Show the cursor where we are pointing on mesh
 func display_brush_at(pos = null, normal = null) -> void:
   if pos and self.owner:
     $Cursor.visible = true
@@ -238,14 +358,23 @@ func display_brush_at(pos = null, normal = null) -> void:
     $Cursor.visible = false
     $CursorMiddle.visible = false
 
-func undo():
-  history_manager.undo()
-  brush_buffer = history_manager.get_brush_buffer()
-  color_buffer = history_manager.get_color_buffer()
-  buffers_to_textures()
+func hide_cursor():
+  painting = false
+  if temp_plugin_node:
+    var cursor_present = false
+    for child in temp_plugin_node.get_children():
+      if child == self:
+        cursor_present = true
+        break
+    if cursor_present:
+      temp_plugin_node.remove_child(self)
+  hide()
 
-func redo():
-  history_manager.redo()
-  brush_buffer = history_manager.get_brush_buffer()
-  color_buffer = history_manager.get_color_buffer()
-  buffers_to_textures()
+func clear_current_bone_weights():
+  if not bone_weight_images.has(current_bone_index):
+    return
+  var weight_image = bone_weight_images[current_bone_index]
+  weight_image.fill(Color(0, 0, 0, 1))  # Clear all weights (red channel = 0)
+  var weight_texture = bone_weight_textures[current_bone_index]
+  weight_texture.update(weight_image)
+  print("Cleared weights for bone ", current_bone_index)
