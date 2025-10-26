@@ -3,13 +3,12 @@
 importer="mesh.painter.plugin"
 type="Image"
 uid="uid://dn8aogtb1qnym"
-path="res://.godot/imported/white.mpaint-e20abaac4525b166cc847f65e881c560.res"
+path="res://.godot/imported/white.mpaint-fb59cd41c2f06e5111aa80859b2a2e2f.res"
 
 [deps]
 
 source_file="res://addons/cabra.lat_uv_painter/materials/white.mpaint"
-dest_files=["res://.godot/imported/white.mpaint-e20abaac4525b166cc847f65e881c560.res"]
+dest_files=["res://.godot/imported/white.mpaint-fb59cd41c2f06e5111aa80859b2a2e2f.res"]
 
 [params]
 
-my_option=false

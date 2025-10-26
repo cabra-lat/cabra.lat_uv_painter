@@ -1,0 +1,98 @@
+[gd_scene load_steps=8 format=3 uid="uid://bl77cxyfks0tb"]
+
+[ext_resource type="Script" uid="uid://s4b1v57dbwtl" path="res://addons/cabra.lat_uv_painter/vertex_weights_panel.gd" id="1_ww4i8"]
+[ext_resource type="Texture2D" uid="uid://dhl1hyah58245" path="res://addons/cabra.lat_uv_painter/icons/brush.svg" id="2_4vctp"]
+[ext_resource type="Texture2D" uid="uid://513m8rkua7oj" path="res://addons/cabra.lat_uv_painter/icons/brush-selected.svg" id="3_10fv7"]
+[ext_resource type="Texture2D" uid="uid://toyy7hjfndnt" path="res://addons/cabra.lat_uv_painter/icons/icon.svg" id="4_ww4i8"]
+[ext_resource type="Texture2D" uid="uid://dmuhpwfhfq6om" path="res://addons/cabra.lat_uv_painter/icons/icon-pressed.svg" id="5_24blw"]
+[ext_resource type="Texture2D" uid="uid://duokslclqnes6" path="res://addons/cabra.lat_uv_painter/icons/eraser.svg" id="6_yg562"]
+[ext_resource type="Texture2D" uid="uid://ddwnmqelecfa6" path="res://addons/cabra.lat_uv_painter/icons/eraser-selected.svg" id="7_t8wwl"]
+
+[node name="VertexWeightsPanel" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_vertical = 0
+script = ExtResource("1_ww4i8")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Albedo"
+
+[node name="Modes" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="BrushButton" type="TextureButton" parent="VBoxContainer/Modes"]
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("2_4vctp")
+texture_pressed = ExtResource("3_10fv7")
+
+[node name="SmoothButton" type="TextureButton" parent="VBoxContainer/Modes"]
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("4_ww4i8")
+texture_pressed = ExtResource("5_24blw")
+
+[node name="EraserButton" type="TextureButton" parent="VBoxContainer/Modes"]
+layout_mode = 2
+toggle_mode = true
+texture_normal = ExtResource("6_yg562")
+texture_pressed = ExtResource("7_t8wwl")
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="WeightContainer" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/WeightContainer"]
+layout_mode = 2
+text = "Weight:"
+
+[node name="WeightSlider" type="HSlider" parent="VBoxContainer/WeightContainer"]
+layout_mode = 2
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.09999999999999999
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="IntensityContainer" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/IntensityContainer"]
+layout_mode = 2
+text = "Intensity"
+
+[node name="IntensitySlider" type="HSlider" parent="VBoxContainer/IntensityContainer"]
+layout_mode = 2
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 0.09999999999999999
+
+[node name="SizeContainer" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/SizeContainer"]
+layout_mode = 2
+text = "Size"
+
+[node name="SizeSlider" type="HSlider" parent="VBoxContainer/SizeContainer"]
+layout_mode = 2
+min_value = 0.01
+max_value = 0.99
+step = 0.01
+value = 0.09999999999999999
+
+[connection signal="pressed" from="VBoxContainer/Modes/BrushButton" to="." method="_on_BrushButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/Modes/SmoothButton" to="." method="_on_SmoothButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/Modes/EraserButton" to="." method="_on_EraserButton_pressed"]
+[connection signal="value_changed" from="VBoxContainer/IntensityContainer/IntensitySlider" to="." method="_on_IntensitySlider_value_changed"]
+[connection signal="value_changed" from="VBoxContainer/SizeContainer/SizeSlider" to="." method="_on_SizeSlider_value_changed"]

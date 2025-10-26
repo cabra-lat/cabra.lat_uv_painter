@@ -1,50 +1,65 @@
-[gd_scene load_steps=8 format=3 uid="uid://m2yk7bohumom"]
+[gd_scene load_steps=9 format=3 uid="uid://m2yk7bohumom"]
 
-[ext_resource type="Script" path="res://addons/cabra.lat_uv_painter/plugin_panel.gd" id="1"]
-[ext_resource type="PackedScene" path="res://addons/cabra.lat_uv_painter/roughness_panel.tscn" id="2"]
-[ext_resource type="PackedScene" path="res://addons/cabra.lat_uv_painter/metalness_panel.tscn" id="3"]
-[ext_resource type="PackedScene" path="res://addons/cabra.lat_uv_painter/emission_panel.tscn" id="4"]
+[ext_resource type="Script" uid="uid://cw27eisgm2ivj" path="res://addons/cabra.lat_uv_painter/plugin_panel.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://dur5wfnrf0sb1" path="res://addons/cabra.lat_uv_painter/roughness_panel.tscn" id="2"]
+[ext_resource type="PackedScene" uid="uid://euscvq38cqbm" path="res://addons/cabra.lat_uv_painter/metalness_panel.tscn" id="3"]
+[ext_resource type="PackedScene" uid="uid://bcrasb8ynqf7p" path="res://addons/cabra.lat_uv_painter/emission_panel.tscn" id="4"]
 [ext_resource type="Texture2D" uid="uid://dho471j3jk7pi" path="res://addons/cabra.lat_uv_painter/icons/undo.svg" id="5"]
 [ext_resource type="Texture2D" uid="uid://ds80toopt04oc" path="res://addons/cabra.lat_uv_painter/icons/undo-hover.svg" id="6"]
-[ext_resource type="PackedScene" uid="uid://dyaolnnrvrqa1" path="res://addons/cabra.lat_uv_painter/albedo_panel.tscn" id="8"]
+[ext_resource type="PackedScene" uid="uid://bl77cxyfks0tb" path="res://addons/cabra.lat_uv_painter/vertex_weights_panel.tscn" id="6_gyftt"]
+[ext_resource type="PackedScene" uid="uid://bywy2jk0nhmxu" path="res://addons/cabra.lat_uv_painter/albedo_panel.tscn" id="8"]
 
 [node name="PluginPanel" type="Control"]
 custom_minimum_size = Vector2(200, 0)
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 custom_minimum_size = Vector2(200, 0)
+layout_mode = 0
 
 [node name="Label" type="Label" parent="VBoxContainer"]
-offset_right = 200.0
-offset_bottom = 26.0
+layout_mode = 2
 text = "Mesh Painter"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
-offset_top = 30.0
-offset_right = 200.0
-offset_bottom = 34.0
+layout_mode = 2
 
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
-offset_top = 38.0
-offset_right = 200.0
-offset_bottom = 239.0
+layout_mode = 2
+current_tab = 4
 
 [node name="A" parent="VBoxContainer/TabContainer" instance=ExtResource("8")]
-offset_top = 31.0
+visible = false
+layout_mode = 2
+metadata/_tab_index = 0
 
 [node name="G" parent="VBoxContainer/TabContainer" instance=ExtResource("2")]
 visible = false
+layout_mode = 2
+metadata/_tab_index = 1
 
 [node name="M" parent="VBoxContainer/TabContainer" instance=ExtResource("3")]
 visible = false
+layout_mode = 2
+metadata/_tab_index = 2
 
 [node name="E" parent="VBoxContainer/TabContainer" instance=ExtResource("4")]
 visible = false
+layout_mode = 2
+metadata/_tab_index = 3
+
+[node name="V" parent="VBoxContainer/TabContainer" instance=ExtResource("6_gyftt")]
+layout_mode = 2
+metadata/_tab_index = 4
 
 [node name="UndoButton" type="TextureButton" parent="."]
+layout_mode = 0
 offset_left = 140.0
 offset_top = 84.0
 offset_right = 156.0
@@ -53,6 +68,7 @@ texture_normal = ExtResource("5")
 texture_hover = ExtResource("6")
 
 [node name="RedoButton" type="TextureButton" parent="."]
+layout_mode = 0
 offset_left = 163.0
 offset_top = 84.0
 offset_right = 179.0
@@ -76,5 +92,6 @@ text = "Mesh Painter saving..."
 [connection signal="values_changed" from="VBoxContainer/TabContainer/G" to="." method="_on_Roughness_values_changed"]
 [connection signal="values_changed" from="VBoxContainer/TabContainer/M" to="." method="_on_Metalness_values_changed"]
 [connection signal="values_changed" from="VBoxContainer/TabContainer/E" to="." method="_on_Emission_values_changed"]
+[connection signal="values_changed" from="VBoxContainer/TabContainer/V" to="." method="_on_VertexWeight_values_changed"]
 [connection signal="pressed" from="UndoButton" to="." method="_on_UndoButton_pressed"]
 [connection signal="pressed" from="RedoButton" to="." method="_on_RedoButton_pressed"]
