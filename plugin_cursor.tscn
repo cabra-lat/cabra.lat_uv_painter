@@ -1,0 +1,56 @@
+[gd_scene load_steps=7 format=3 uid="uid://7bbf0du2vkkh"]
+
+[ext_resource type="Script" path="res://addons/cabra.lat_uv_painter/plugin_cursor.gd" id="2"]
+
+[sub_resource type="Shader" id="5"]
+code = "// NOTE: Shader automatically converted from Godot Engine 3.4.4.stable's SpatialMaterial.
+
+shader_type spatial;
+render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx,unshaded,depth_test_disabled;
+uniform vec3 color1 = vec3(1.0,0.0,0.0);
+uniform vec3 color2 = vec3(0.0,1.0,0.0);
+
+varying vec3 world_position;
+
+void vertex() {
+	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+//	ALBEDO = mix(color1, color2, (1.0 + cos(TIME))/2.0);
+//	ALBEDO = vec3(world_position.x, world_position.y, world_position.z);
+	ALBEDO = vec3(SCREEN_UV.x, SCREEN_UV.y, 0.);
+}"
+
+[sub_resource type="ShaderMaterial" id="6"]
+render_priority = 0
+shader = SubResource("5")
+color1 = null
+color2 = null
+
+[sub_resource type="SphereMesh" id="4"]
+material = SubResource("6")
+radius = 0.02
+height = 0.04
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="1"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0, 0, 0, 0.196078)
+
+[sub_resource type="SphereMesh" id="2"]
+material = SubResource("1")
+radial_segments = 48
+rings = 24
+
+[node name="PluginCursor" type="Node3D"]
+script = ExtResource("2")
+
+[node name="CursorMiddle" type="MeshInstance3D" parent="."]
+mesh = SubResource("4")
+skeleton = NodePath("../Cursor")
+
+[node name="Cursor" type="MeshInstance3D" parent="."]
+mesh = SubResource("2")

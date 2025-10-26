@@ -1,0 +1,16 @@
+[gd_scene load_steps=5 format=3 uid="uid://c6qqva0vd4kvl"]
+
+[ext_resource type="Texture2D" uid="uid://toyy7hjfndnt" path="res://addons/cabra.lat_uv_painter/icons/icon.svg" id="1_amhp4"]
+[ext_resource type="Texture2D" uid="uid://dmuhpwfhfq6om" path="res://addons/cabra.lat_uv_painter/icons/icon-pressed.svg" id="2_rlcuq"]
+[ext_resource type="Texture2D" uid="uid://beaohr65m4ve8" path="res://addons/cabra.lat_uv_painter/icons/icon-hover.svg" id="3_s87s0"]
+[ext_resource type="Script" path="res://addons/cabra.lat_uv_painter/plugin_button.gd" id="4"]
+
+[node name="PluginButton" type="TextureButton"]
+toggle_mode = true
+shortcut_in_tooltip = false
+texture_normal = ExtResource("1_amhp4")
+texture_pressed = ExtResource("2_rlcuq")
+texture_hover = ExtResource("3_s87s0")
+script = ExtResource("4")
+
+[connection signal="toggled" from="." to="." method="_on_PluginButton_toggled"]
